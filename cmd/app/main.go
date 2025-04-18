@@ -116,12 +116,36 @@ func main() {
 		return update.PreCheckoutQuery != nil
 	}, h.PreCheckoutCallbackHandler)
 
-	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-		return update.Message != nil && update.Message.SuccessfulPayment != nil
-	}, h.SuccessPaymentHandler)
+   // ─── WALLET‑PAY ────────────────────────────────────────────────────
+   // 1. callback‑кнопка 📤 Send payment screenshot → send_ss_<purchaseID>
+   b.RegisterHandler(
+       bot.HandlerTypeCallbackQueryData,
+       "send_ss_",              // префикс callback‑данных
+       bot.MatchTypePrefix,
+       h.SendScreenshotCallbackHandler,
+   )
 
-	slog.Info("Bot is starting...")
-	b.Start(ctx)
+   // 2. следующее пришедшее фото пользователя пересылаем админу
+   b.RegisterHandlerMatchFunc(
+       func(upd *models.Update) bool {
+          return upd.Message != nil && upd.Message.Photo != nil
+      },
+       h.PhotoMessageHandler,
+   )
+
+   // 3. админ отвечает на скриншот → ответ уходит пользователю
+   b.RegisterHandlerMatchFunc(
+       func(upd *models.Update) bool {
+           return upd.Message != nil &&
+                  upd.Message.ReplyToMessage != nil &&
+                 upd.Message.From.ID == config.GetAdminTelegramId()
+      },
+       h.AdminReplyHandler,
+   )
+   // ────────────────────────────────────────────────────────────────────
+
+    slog.Info("Bot is starting...")
+    b.Start(ctx)
 }
 
 func isAdminMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
