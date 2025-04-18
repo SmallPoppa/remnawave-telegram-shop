@@ -19,6 +19,11 @@ import (
 	"time"
 )
 
+// ─────────── WALLET‑PAY state ────────────────────────────────────────────
+var waitingScreenshot = make(map[int64]int64) // userID → purchaseID
+var replyMap          = make(map[int64]int64) // adminMsgID → userID
+// ────────────────────────────────────────────────────────────────────────
+
 type Handler struct {
 	customerRepository *database.CustomerRepository
 	purchaseRepository *database.PurchaseRepository
@@ -36,7 +41,8 @@ func NewHandler(
 	customerRepository *database.CustomerRepository,
 	purchaseRepository *database.PurchaseRepository,
 	cryptoPayClient *cryptopay.Client,
-	yookasaClient *yookasa.Client) *Handler {
+	yookasaClient *yookasa.Client,
+) *Handler {
 	return &Handler{
 		syncService:        syncService,
 		paymentService:     paymentService,
@@ -57,6 +63,8 @@ const (
 	CallbackTrial         = "trial"
 	CallbackActivateTrial = "activate_trial"
 )
+
+// --------------------------- /start command ---------------------------------
 
 func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	ctxWithTime, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -81,16 +89,13 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 		updates := map[string]interface{}{
 			"language": langCode,
 		}
-
-		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates)
-		if err != nil {
+		if err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates); err != nil {
 			slog.Error("Error updating customer", err)
 			return
 		}
 	}
 
 	var inlineKeyboard [][]models.InlineKeyboardButton
-
 	if existingCustomer.SubscriptionLink == nil {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
 			{Text: h.translation.GetText(langCode, "trial_button"), CallbackData: CallbackTrial},
@@ -98,62 +103,49 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 	}
 
 	inlineKeyboard = append(inlineKeyboard, [][]models.InlineKeyboardButton{
-		{{Text: h.translation.GetText(langCode, "buy_button"), CallbackData: "buy"}},
-		{{Text: h.translation.GetText(langCode, "connect_button"), CallbackData: "connect"}},
+		{{Text: h.translation.GetText(langCode, "buy_button"), CallbackData: CallbackBuy}},
+		{{Text: h.translation.GetText(langCode, "connect_button"), CallbackData: CallbackConnect}},
 	}...)
 
-	if config.ServerStatusURL() != "" {
+	if url := config.ServerStatusURL(); url != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "server_status_button"), URL: config.ServerStatusURL()},
+			{Text: h.translation.GetText(langCode, "server_status_button"), URL: url},
+		})
+	}
+	if url := config.SupportURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "support_button"), URL: url},
+		})
+	}
+	if url := config.FeedbackURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "feedback_button"), URL: url},
+		})
+	}
+	if url := config.ChannelURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "channel_button"), URL: url},
+		})
+	}
+	if url := config.TosURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "tos_button"), URL: url},
 		})
 	}
 
-	if config.SupportURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "support_button"), URL: config.SupportURL()},
-		})
-	}
-
-	if config.FeedbackURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "feedback_button"), URL: config.FeedbackURL()},
-		})
-	}
-
-	if config.ChannelURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "channel_button"), URL: config.ChannelURL()},
-		})
-	}
-
-	if config.TosURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "tos_button"), URL: config.TosURL()},
-		})
-	}
-
-	m, err := b.SendMessage(ctx, &bot.SendMessageParams{
+	m, _ := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
 		Text:   "🧹",
 		ReplyMarkup: models.ReplyKeyboardRemove{
 			RemoveKeyboard: true,
 		},
 	})
-
-	if err != nil {
-		slog.Error("Error sending removing reply keyboard", err)
-	}
-
-	_, err = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+	_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 		ChatID:    update.Message.Chat.ID,
 		MessageID: m.ID,
 	})
 
-	if err != nil {
-		slog.Error("Error deleting message", err)
-	}
-
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    update.Message.Chat.ID,
 		ParseMode: models.ParseModeMarkdown,
 		ReplyMarkup: models.InlineKeyboardMarkup{
@@ -161,15 +153,14 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 		},
 		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), bot.EscapeMarkdown(utils.BuildAvailableCountriesLists(langCode))),
 	})
-	if err != nil {
-		slog.Error("Error sending /start message", err)
-	}
 }
+
+// --------------------------- TRIAL handlers ---------------------------------
 
 func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	callback := update.CallbackQuery.Message.Message
 	langCode := update.CallbackQuery.From.LanguageCode
-	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
 		Text:      h.translation.GetText(langCode, "trial_text"),
@@ -181,128 +172,96 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 			},
 		},
 	})
-	if err != nil {
-		slog.Error("Error sending /trial message", err)
-	}
 }
 
 func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	callback := update.CallbackQuery.Message.Message
-	_, err := h.paymentService.ActivateTrial(ctx, update.CallbackQuery.From.ID)
+	_, _ = h.paymentService.ActivateTrial(ctx, update.CallbackQuery.From.ID)
 	langCode := update.CallbackQuery.From.LanguageCode
-	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
 		Text:      h.translation.GetText(langCode, "trial_activated"),
 		ParseMode: models.ParseModeMarkdown,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{{Text: h.translation.GetText(langCode, "connect_button"), CallbackData: "connect"}},
+				{{Text: h.translation.GetText(langCode, "connect_button"), CallbackData: CallbackConnect}},
 				{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}},
 			},
 		},
 	})
-	if err != nil {
-		slog.Error("Error sending /trial message", err)
-	}
 }
+
+// --------------------------- START callback ---------------------------------
 
 func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	ctxWithTime, cancel := context.WithTimeout(ctx, 5*time.Second)
-	callback := update.CallbackQuery
-	langCode := callback.From.LanguageCode
-
 	defer cancel()
-	existingCustomer, err := h.customerRepository.FindByTelegramId(ctx, callback.From.ID)
-	if err != nil {
-		slog.Error("error finding customer by telegram id", err)
-	}
+	cb := update.CallbackQuery
+	langCode := cb.From.LanguageCode
 
+	existingCustomer, _ := h.customerRepository.FindByTelegramId(ctxWithTime, cb.From.ID)
 	if existingCustomer == nil {
-		existingCustomer, err = h.customerRepository.Create(ctxWithTime, &database.Customer{
-			TelegramID: update.Message.Chat.ID,
-			Language:   langCode,
-		})
-		if err != nil {
-			slog.Error("error creating customer", err)
-			return
-		}
-		slog.Info("user created", "telegramId", update.Message.Chat.ID)
-	} else {
-		updates := map[string]interface{}{
-			"language": langCode,
-		}
-
-		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates)
-		if err != nil {
-			slog.Error("Error updating customer", err)
-			return
-		}
+		existingCustomer, _ = h.customerRepository.Create(ctxWithTime, &database.Customer{TelegramID: cb.From.ID, Language: langCode})
 	}
 
 	var inlineKeyboard [][]models.InlineKeyboardButton
-
 	if existingCustomer.SubscriptionLink == nil {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
 			{Text: h.translation.GetText(langCode, "trial_button"), CallbackData: CallbackTrial},
 		})
 	}
-
 	inlineKeyboard = append(inlineKeyboard, [][]models.InlineKeyboardButton{
-		{{Text: h.translation.GetText(langCode, "buy_button"), CallbackData: "buy"}},
-		{{Text: h.translation.GetText(langCode, "connect_button"), CallbackData: "connect"}},
+		{{Text: h.translation.GetText(langCode, "buy_button"), CallbackData: CallbackBuy}},
+		{{Text: h.translation.GetText(langCode, "connect_button"), CallbackData: CallbackConnect}},
 	}...)
 
-	if config.ServerStatusURL() != "" {
+	if url := config.ServerStatusURL(); url != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "server_status_button"), URL: config.ServerStatusURL()},
+			{Text: h.translation.GetText(langCode, "server_status_button"), URL: url},
+		})
+	}
+	if url := config.SupportURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "support_button"), URL: url},
+		})
+	}
+	if url := config.FeedbackURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "feedback_button"), URL: url},
+		})
+	}
+	if url := config.ChannelURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "channel_button"), URL: url},
+		})
+	}
+	if url := config.TosURL(); url != "" {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "tos_button"), URL: url},
 		})
 	}
 
-	if config.SupportURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "support_button"), URL: config.SupportURL()},
-		})
-	}
-
-	if config.FeedbackURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "feedback_button"), URL: config.FeedbackURL()},
-		})
-	}
-
-	if config.ChannelURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "channel_button"), URL: config.ChannelURL()},
-		})
-	}
-
-	if config.TosURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "tos_button"), URL: config.TosURL()},
-		})
-	}
-
-	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: callback.Message.Message.Chat.ID,
-		MessageID: callback.Message.Message.ID,
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    cb.Message.Message.Chat.ID,
+		MessageID: cb.Message.Message.ID,
 		ParseMode: models.ParseModeMarkdown,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
 		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), bot.EscapeMarkdown(utils.BuildAvailableCountriesLists(langCode))),
 	})
-	if err != nil {
-		slog.Error("Error sending /start message", err)
-	}
 }
 
+// --------------------------- BUY callback -----------------------------------
+
 func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	callback := update.CallbackQuery.Message.Message
+	cb := update.CallbackQuery.Message.Message
 	langCode := update.CallbackQuery.From.LanguageCode
 
-	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    cb.Chat.ID,
+		MessageID: cb.ID,
 		ParseMode: models.ParseModeMarkdown,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
@@ -318,248 +277,275 @@ func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *mod
 			},
 		},
 		Text: fmt.Sprintf(h.translation.GetText(langCode, "pricing_info"),
-			config.Price1(),
-			config.Price3(),
-			config.Price6(),
-			config.Price12()),
+			config.Price1(), config.Price3(), config.Price6(), config.Price12()),
 	})
-	if err != nil {
-		slog.Error("Error sending buy message", err)
-	}
 }
 
+// -------------------------- SELL callback -----------------------------------
+
 func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	callback := update.CallbackQuery.Message.Message
-	callbackQuery := parseCallbackData(update.CallbackQuery.Data)
+	cb := update.CallbackQuery.Message.Message
+	params := parseCallbackData(update.CallbackQuery.Data)
 	langCode := update.CallbackQuery.From.LanguageCode
-	month := callbackQuery["month"]
-	amount := callbackQuery["amount"]
+	month := params["month"]
+	amount := params["amount"]
 
 	var keyboard [][]models.InlineKeyboardButton
-
 	if config.IsCryptoPayEnabled() {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
 			{Text: h.translation.GetText(langCode, "crypto_button"), CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeCrypto, amount)},
 		})
 	}
-
+	if config.UsdtWallet() != "" {
+		keyboard = append(keyboard, []models.InlineKeyboardButton{
+			{Text: h.translation.GetText(langCode, "to_wallet"), CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeWallet, amount)},
+		})
+	}
 	if config.IsYookasaEnabled() {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
 			{Text: h.translation.GetText(langCode, "card_button"), CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeYookasa, amount)},
 		})
 	}
-
 	if config.IsTelegramStarsEnabled() {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
 			{Text: "⭐Telegram Stars", CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeTelegram, amount)},
 		})
 	}
-
 	keyboard = append(keyboard, []models.InlineKeyboardButton{
 		{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart},
 	})
 
-	_, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
+	_, _ = b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+		ChatID:    cb.Chat.ID,
+		MessageID: cb.ID,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: keyboard,
 		},
 	})
-
-	if err != nil {
-		slog.Error("Error sending sell message", err)
-	}
 }
+
+// -------------------------- PAYMENT callback ------------------------------
 
 func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	callback := update.CallbackQuery.Message.Message
-	callbackQuery := parseCallbackData(update.CallbackQuery.Data)
-	month, err := strconv.Atoi(callbackQuery["month"])
-	if err != nil {
-		slog.Error("Error getting month from query", err)
-		return
-	}
+	cb := update.CallbackQuery.Message.Message
+	params := parseCallbackData(update.CallbackQuery.Data)
 
-	price, err := strconv.Atoi(callbackQuery["amount"])
-	if err != nil {
-		slog.Error("Error getting price from query", err)
-		return
-	}
+	month, _ := strconv.Atoi(params["month"])
+	price, _ := strconv.Atoi(params["amount"])
+	invoiceType := database.InvoiceType(params["invoiceType"])
 
-	invoiceType := database.InvoiceType(callbackQuery["invoiceType"])
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	customer, err := h.customerRepository.FindByTelegramId(ctx, callback.Chat.ID)
-	if err != nil {
-		slog.Error("Error finding customer", err)
-	}
+	customer, _ := h.customerRepository.FindByTelegramId(ctx2, cb.Chat.ID)
 	if customer == nil {
-		slog.Error("customer not exist", "chatID", callback.Chat.ID, "error", err)
+		slog.Error("customer not exist", "chatID", cb.Chat.ID)
 		return
 	}
 
-	paymentURL, err := h.paymentService.CreatePurchase(ctx, price, month, customer, invoiceType)
-
-	if err != nil {
-		slog.Error("Error creating payment", err)
+	// — ручная оплата на USDT‑кошелёк —
+	if invoiceType == database.InvoiceTypeWallet {
+		idStr, _ := h.paymentService.CreatePurchase(ctx2, price, month, customer, invoiceType)
+		pid, _ := strconv.ParseInt(idStr, 10, 64)
+		lang := update.CallbackQuery.From.LanguageCode
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    cb.Chat.ID,
+			MessageID: cb.ID,
+			ParseMode: models.ParseModeMarkdown,
+			Text:      fmt.Sprintf(h.translation.GetText(lang, "wallet_send"), price) + "\n`" + config.UsdtWallet() + "`",
+			ReplyMarkup: models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{{
+					{
+						Text:         h.translation.GetText(lang, "send_payment_screenshot"),
+						CallbackData: fmt.Sprintf("send_ss_%d", pid),
+					},
+					{
+						Text:         h.translation.GetText(lang, "back_button"),
+						CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, month, price),
+					},
+				}},
+			},
+		})
+		return
 	}
 
-	langCode := update.CallbackQuery.From.LanguageCode
-
-	_, err = b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
+	// — все остальные способы оплаты —
+	paymentURL, _ := h.paymentService.CreatePurchase(ctx2, price, month, customer, invoiceType)
+	lang := update.CallbackQuery.From.LanguageCode
+	_, _ = b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+		ChatID:    cb.Chat.ID,
+		MessageID: cb.ID,
 		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{
-					{Text: h.translation.GetText(langCode, "pay_button"), URL: paymentURL},
-					{Text: h.translation.GetText(langCode, "back_button"), CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, month, price)},
-				},
-			},
+			InlineKeyboard: [][]models.InlineKeyboardButton{{
+				{Text: h.translation.GetText(lang, "pay_button"), URL: paymentURL},
+				{Text: h.translation.GetText(lang, "back_button"), CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, month, price)},
+			}},
 		},
 	})
-	if err != nil {
-		slog.Error("Error updating sell message", err)
-	}
-
 }
 
+// ——————— кнопка “Send payment screenshot” —————————————————
+
+func (h Handler) SendScreenshotCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	pidStr := strings.TrimPrefix(update.CallbackQuery.Data, "send_ss_")
+	pid, _ := strconv.ParseInt(pidStr, 10, 64)
+	waitingScreenshot[update.CallbackQuery.From.ID] = pid
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: update.CallbackQuery.From.ID,
+		Text:   "Please attach the transaction screenshot now.",
+	})
+}
+
+// ——————— приём фото → пересылаем админу —————————————————
+
+func (h Handler) PhotoMessageHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	msg := update.Message
+	if msg == nil || msg.Photo == nil {
+		return
+	}
+	uid := msg.From.ID
+	pid, ok := waitingScreenshot[uid]
+	if !ok {
+		return
+	}
+	delete(waitingScreenshot, uid)
+
+	purchase, _ := h.purchaseRepository.FindById(ctx, pid)
+	tariff := ""
+	if purchase != nil {
+		tariff = fmt.Sprintf("\nTariff: %d months", purchase.Month)
+	}
+
+	copied, _ := b.CopyMessage(ctx, &bot.CopyMessageParams{
+		ChatID:     config.GetAdminTelegramId(),
+		FromChatID: msg.Chat.ID,
+		MessageID:  msg.ID,
+		Caption: fmt.Sprintf(
+			"USDT wallet payment%s\nPurchase ID: %d\nUser: %d (@%s)",
+			tariff, pid, uid, msg.From.Username,
+		),
+	})
+	replyMap[int64(copied.ID)] = uid
+
+	lang := msg.From.LanguageCode
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: uid,
+		Text:   h.translation.GetText(lang, "payment_received_wait"),
+	})
+}
+
+// ——————— админ отвечает → пересылаем юзеру —————————————————
+
+func (h Handler) AdminReplyHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	msg := update.Message
+	if msg == nil || msg.ReplyToMessage == nil {
+		return
+	}
+	if msg.From.ID != config.GetAdminTelegramId() {
+		return
+	}
+	userID, ok := replyMap[int64(msg.ReplyToMessage.ID)]
+	if !ok {
+		return
+	}
+
+	if msg.Text != "" {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: userID,
+			Text:   msg.Text,
+		})
+	}
+	if msg.Photo != nil {
+		_, _ = b.CopyMessage(ctx, &bot.CopyMessageParams{
+			ChatID:     userID,
+			FromChatID: msg.Chat.ID,
+			MessageID:  msg.ID,
+		})
+	}
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   "✅ Отправлено пользователю",
+	})
+}
+
+// --------------------------- /connect command -------------------------------
+
 func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	customer, err := h.customerRepository.FindByTelegramId(ctx, update.Message.Chat.ID)
-	if err != nil {
-		slog.Error("Error finding customer", err)
-	}
-	if customer == nil {
-		slog.Error("customer not exist", "chatID", update.Message.Chat.ID, "error", err)
-	}
-
+	customer, _ := h.customerRepository.FindByTelegramId(ctx, update.Message.Chat.ID)
 	langCode := update.Message.From.LanguageCode
-
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
 		Text:   buildConnectText(customer, langCode),
 		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}},
-			},
+			InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}}},
 		},
 	})
-
-	if err != nil {
-		slog.Error("Error sending connect message", err)
-	}
 }
+
+// -------------------------- CONNECT callback --------------------------------
 
 func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	callback := update.CallbackQuery.Message.Message
-
-	customer, err := h.customerRepository.FindByTelegramId(ctx, callback.Chat.ID)
-	if err != nil {
-		slog.Error("Error finding customer", err)
-	}
-	if customer == nil {
-		slog.Error("customer not exist", "chatID", callback.Chat.ID, "error", err)
-	}
-
+	cb := update.CallbackQuery.Message.Message
+	customer, _ := h.customerRepository.FindByTelegramId(ctx, cb.Chat.ID)
 	langCode := update.CallbackQuery.From.LanguageCode
-
-	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    cb.Chat.ID,
+		MessageID: cb.ID,
 		Text:      buildConnectText(customer, langCode),
 		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}},
-			},
+			InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}}},
 		},
 	})
-
-	if err != nil {
-		slog.Error("Error sending connect message", err)
-	}
 }
 
+// ------------------------ other telegram handlers ---------------------------
+
 func (h Handler) PreCheckoutCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	_, err := b.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
+	_, _ = b.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
 		PreCheckoutQueryID: update.PreCheckoutQuery.ID,
 		OK:                 true,
 	})
-	if err != nil {
-		slog.Error("Error sending answer pre checkout query", err)
-	}
 }
 
 func (h Handler) SuccessPaymentHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	purchaseId, err := strconv.Atoi(update.Message.SuccessfulPayment.InvoicePayload)
-	if err != nil {
-		slog.Error("Error parsing purchase id", err)
-	}
-
-	err = h.paymentService.ProcessPurchaseById(int64(purchaseId))
-	if err != nil {
-		slog.Error("Error processing purchase", err)
-	}
-
+	purchaseID, _ := strconv.Atoi(update.Message.SuccessfulPayment.InvoicePayload)
+	_ = h.paymentService.ProcessPurchaseById(int64(purchaseID))
 }
 
 func (h Handler) SyncUsersCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	h.syncService.Sync()
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
 		Text:   "Users synced",
 	})
-	if err != nil {
-		slog.Error("Error sending sync message", err)
-	}
 }
 
+// --------------------------- helper functions -------------------------------
+
 func buildConnectText(customer *database.Customer, langCode string) string {
-	var info strings.Builder
-
+	var sb strings.Builder
 	tm := translation.GetInstance()
-
-	if customer.ExpireAt != nil {
-		currentTime := time.Now()
-
-		if currentTime.Before(*customer.ExpireAt) {
-			formattedDate := customer.ExpireAt.Format("02.01.2006 15:04")
-
-			subscriptionActiveText := tm.GetText(langCode, "subscription_active")
-			info.WriteString(fmt.Sprintf(subscriptionActiveText, formattedDate))
-
-			if customer.SubscriptionLink != nil && *customer.SubscriptionLink != "" {
-				subscriptionLinkText := tm.GetText(langCode, "subscription_link")
-				info.WriteString(fmt.Sprintf(subscriptionLinkText, *customer.SubscriptionLink))
-			}
-		} else {
-			noSubscriptionText := tm.GetText(langCode, "no_subscription")
-			info.WriteString(noSubscriptionText)
+	if customer.ExpireAt != nil && time.Now().Before(*customer.ExpireAt) {
+		sb.WriteString(fmt.Sprintf(tm.GetText(langCode, "subscription_active"), customer.ExpireAt.Format("02.01.2006 15:04")))
+		if customer.SubscriptionLink != nil && *customer.SubscriptionLink != "" {
+			sb.WriteString(fmt.Sprintf(tm.GetText(langCode, "subscription_link"), *customer.SubscriptionLink))
 		}
 	} else {
-		noSubscriptionText := tm.GetText(langCode, "no_subscription")
-		info.WriteString(noSubscriptionText)
+		sb.WriteString(tm.GetText(langCode, "no_subscription"))
 	}
-
-	return info.String()
+	return sb.String()
 }
 
 func parseCallbackData(data string) map[string]string {
 	result := make(map[string]string)
-
 	parts := strings.Split(data, "?")
 	if len(parts) < 2 {
 		return result
 	}
-
-	params := strings.Split(parts[1], "&")
-	for _, param := range params {
-		kv := strings.SplitN(param, "=", 2)
-		if len(kv) == 2 {
+	for _, param := range strings.Split(parts[1], "&") {
+		if kv := strings.SplitN(param, "=", 2); len(kv) == 2 {
 			result[kv[0]] = kv[1]
 		}
 	}
-
 	return result
 }

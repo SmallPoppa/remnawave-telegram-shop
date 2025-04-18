@@ -36,6 +36,7 @@ type config struct {
 	isCryptoEnabled        bool
 	isTelegramStarsEnabled bool
 	adminTelegramId        int64
+    usdtWallet string        // NEW
 	trialDays              int
 	trialTrafficLimit      int64
 	inboundUUIDs           []string // Изменено: UUID вместо тегов для фильтрации inbounds
@@ -310,6 +311,12 @@ func InitConfig() {
 	conf.channelURL = os.Getenv("CHANNEL_URL")
 	conf.tosURL = os.Getenv("TOS_URL")
 
+    // --- USDT wallet manual payments ---
+    conf.usdtWallet = os.Getenv("USDT_WALLET_ADDRESS")
+    if conf.usdtWallet == "" {
+        slog.Warn("USDT_WALLET_ADDRESS not set — «To wallet» payment will be hidden")
+    }
+
 	// Изменена обработка переменной INBOUND_UUIDS вместо INBOUND_TAGS
 	inboundUUIDsStr := os.Getenv("INBOUND_UUIDS")
 	if inboundUUIDsStr != "" {
@@ -325,18 +332,22 @@ func InitConfig() {
 		slog.Info("No inbound UUIDs specified, all will be used")
 	}
 
-	// Добавлена обработка переменной ALLOWED_COUNTRIES
-	allowedCountriesStr := os.Getenv("ALLOWED_COUNTRIES")
-	if allowedCountriesStr != "" {
-		// Разбиваем строку с кодами стран по запятой и удаляем лишние пробелы
-		countries := strings.Split(allowedCountriesStr, ",")
-		for i := range countries {
-			countries[i] = strings.TrimSpace(countries[i])
-		}
-		conf.allowedCountries = countries
-		slog.Info("Loaded allowed countries", "countries", conf.allowedCountries)
-	} else {
-		conf.allowedCountries = []string{} // Пустой массив, если страны не указаны
-		slog.Info("No country restrictions, all countries will be shown")
-	}
+    // Добавлена обработка переменной ALLOWED_COUNTRIES
+    allowedCountriesStr := os.Getenv("ALLOWED_COUNTRIES")
+    if allowedCountriesStr != "" {
+        countries := strings.Split(allowedCountriesStr, ",")
+        for i := range countries {
+            countries[i] = strings.TrimSpace(countries[i])
+        }
+        conf.allowedCountries = countries
+        slog.Info("Loaded allowed countries", "countries", conf.allowedCountries)
+    } else {
+        conf.allowedCountries = []string{}
+        slog.Info("No country restrictions, all countries will be shown")
+    }
+} // ←–––––– ЗАКРЫВАЕМ ФУНКЦИЮ InitConfig()
+
+// -------- USDT manual‑payment getter --------
+func UsdtWallet() string {
+    return conf.usdtWallet
 }

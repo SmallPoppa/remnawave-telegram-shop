@@ -3,7 +3,7 @@
   "buy_button": "💰 Buy",
   "connect_button": "🔌 Connect",
   "back_button": "🔙 Back",
-  "pricing_info": "\n📅 *1 month*  %d₽\n📅 *3 months*  %d₽\n📅 *6 months*  %d₽\n📅 *12 months*  %d₽\n\nRussian bank cards and cryptocurrency are accepted for payment",
+  "pricing_info": "\n📅 *1 month*  %d$\n📅 *3 months*  %d$\n📅 *6 months*  %d$\n📅 *12 months*  %d$\n\nCryptocurrency is accepted for payment\nAll prices are in USDT\n\nYou can pay directly to wallet to avoid fees",
   "month_1": "1 month",
   "month_3": "3 months",
   "month_6": "6 months",
@@ -28,5 +28,9 @@
   "trial_button": "🔥 Try for free",
   "trial_activated": "Trial period activated",
   "trial_text": "Your trial version is active",
-  "activate_trial_button": "Activate trial version"
+  "activate_trial_button": "Activate trial version",
+  "to_wallet": "💸 To wallet",
+  "wallet_send": "Send %d USDT to the TRC20 address below and then press the button",
+  "send_payment_screenshot": "📤 Send payment screenshot",
+  "payment_received_wait": "Thank you for your payment\n The administrator will activate your subscription within twelve hours"
 }
