@@ -645,6 +645,82 @@ func (h Handler) SyncUsersCommandHandler(ctx context.Context, b *bot.Bot, update
 	}
 }
 
+func (h Handler) BroadcastMessageHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+    // Получаем текст сообщения, пропуская команду "/pm"
+    message := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/pm"))
+    if message == "" {
+        // Если сообщение пустое, отправляем ошибку
+        _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+            ChatID: update.Message.Chat.ID,
+            Text:   "Ошибка: текст сообщения не может быть пустым. Используйте: /pm Ваше сообщение",
+        })
+        if err != nil {
+            slog.Error("Error sending error message", err)
+        }
+        return
+    }
+
+    // Отправляем подтверждение администратору
+    _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+        ChatID: update.Message.Chat.ID,
+        Text:   "Начинаю рассылку...",
+    })
+    if err != nil {
+        slog.Error("Error sending confirmation message", err)
+    }
+
+    // Создаём новый контекст с таймаутом
+    ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+    defer cancel()
+
+    // Получаем всех пользователей из базы данных
+    customers, err := h.customerRepository.FindAll(ctxWithTimeout)
+    if err != nil {
+        slog.Error("Error getting customers", err)
+        _, err = b.SendMessage(ctx, &bot.SendMessageParams{
+            ChatID: update.Message.Chat.ID,
+            Text:   "Ошибка при получении списка пользователей: " + err.Error(),
+        })
+        if err != nil {
+            slog.Error("Error sending error message", err)
+        }
+        return
+    }
+
+    // Счётчики для отчёта
+    var successCount, failCount int
+
+    // Отправляем сообщение каждому пользователю
+    for _, customer := range customers {
+        _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+            ChatID: customer.TelegramID,
+            Text:   message,
+        })
+
+        if err != nil {
+            failCount++
+            slog.Error("Error sending broadcast message to user", 
+                      "telegramId", customer.TelegramID, 
+                      "error", err)
+        } else {
+            successCount++
+        }
+
+        // Добавляем небольшую задержку, чтобы не превысить лимиты Telegram API
+        time.Sleep(50 * time.Millisecond)
+    }
+
+    // Отправляем отчёт администратору
+    _, err = b.SendMessage(ctx, &bot.SendMessageParams{
+        ChatID: update.Message.Chat.ID,
+        Text:   fmt.Sprintf("Рассылка завершена.\nУспешно отправлено: %d\nОшибок: %d", 
+                          successCount, failCount),
+    })
+    if err != nil {
+        slog.Error("Error sending report message", err)
+    }
+}
+
 func buildConnectText(customer *database.Customer, langCode string) string {
 	var info strings.Builder
 
