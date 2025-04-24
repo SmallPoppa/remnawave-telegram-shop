@@ -29,7 +29,7 @@ The application requires the following environment variables to be set:
 | `PRICE_1`                | Price for 1 month                                                                                                                            |
 | `PRICE_3`                | Price for 3 month                                                                                                                            |
 | `PRICE_6`                | Price for 6 month                                                                                                                            |
-| `MINI_APP_URL`           | tg web app url. if empty not be used.                                                                                                        |
+| `MINI_APP_URL`           | tg WEB APP URL. if empty not be used.                                                                                                        |
 | `PRICE_12`               | Price for 12 month                                                                                                                           |
 | `REFERRAL_DAYS`          | Refferal days. if 0, then disabled.                                                                                                          |
 | `TELEGRAM_TOKEN`         | Telegram Bot API token for bot functionality                                                                                                 |
