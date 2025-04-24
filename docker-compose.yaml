@@ -1,7 +1,7 @@
 services:
   bot:
 #    build: .
-    image: ghcr.io/jolymmiles/remnawave-telegram-shop-bot:latest
+    image: ghcr.io/smallpoppa/remnawave-telegram-shop:latest
     env_file:
       - .env
     depends_on:
@@ -9,7 +9,8 @@ services:
         condition: service_healthy
 #    volumes:
 #      - ./translations:/translations
-
+    networks:
+      - remnawave-network
   db:
     image: postgres:17
     container_name: 'remnawave-telegram-shop-db'
@@ -31,9 +32,17 @@ services:
       interval: 3s
       timeout: 10s
       retries: 3
+    networks:
+      - remnawave-network
 
 volumes:
   remnawave-telegram-shop-db-data:
     driver: local
     external: false
     name: remnawave-telegram-shop-db-data
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: true
