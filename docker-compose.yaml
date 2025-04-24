@@ -1,7 +1,7 @@
 services:
   bot:
 #    build: .
-    image: ghcr.io/smallpoppa/remnawave-telegram-shop:latest
+    image: ghcr.io/smallpoppa/remnawave-telegram-shop-bot:latest
     env_file:
       - .env
     depends_on:
