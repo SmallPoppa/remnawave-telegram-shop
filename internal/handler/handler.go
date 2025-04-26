@@ -455,7 +455,7 @@ func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *mo
 	}
 
 	keyboard = append(keyboard, []models.InlineKeyboardButton{
-		{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart},
+		{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackBuy},
 	})
 
 	_, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
