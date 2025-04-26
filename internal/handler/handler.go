@@ -342,7 +342,8 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 		return
 	}
 	callback := update.CallbackQuery.Message.Message
-	_, err := h.paymentService.ActivateTrial(ctx, update.CallbackQuery.From.ID)
+	ctxWithUsername := context.WithValue(ctx, "username", update.CallbackQuery.From.Username)
+	_, err := h.paymentService.ActivateTrial(ctxWithUsername, update.CallbackQuery.From.ID)
 	langCode := update.CallbackQuery.From.LanguageCode
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      callback.Chat.ID,
@@ -500,7 +501,8 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
-	paymentURL, err := h.paymentService.CreatePurchase(ctx, price, month, customer, invoiceType)
+	ctxWithUsername := context.WithValue(ctx, "username", update.CallbackQuery.From.Username)
+	paymentURL, err := h.paymentService.CreatePurchase(ctxWithUsername, price, month, customer, invoiceType)
 
 	if err != nil {
 		slog.Error("Error creating payment", err)
@@ -605,13 +607,16 @@ func (h Handler) PreCheckoutCallbackHandler(ctx context.Context, b *bot.Bot, upd
 }
 
 func (h Handler) SuccessPaymentHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	purchaseId, err := strconv.Atoi(update.Message.SuccessfulPayment.InvoicePayload)
+	payload := strings.Split(update.Message.SuccessfulPayment.InvoicePayload, "&")
+	purchaseId, err := strconv.Atoi(payload[0])
+	username := payload[1]
 	if err != nil {
 		slog.Error("Error parsing purchase id", err)
 		return
 	}
 
-	err = h.paymentService.ProcessPurchaseById(int64(purchaseId))
+	ctxWithUsername := context.WithValue(ctx, "username", username)
+	err = h.paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseId))
 	if err != nil {
 		slog.Error("Error processing purchase", err)
 	}

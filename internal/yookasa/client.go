@@ -74,6 +74,7 @@ func (c *Client) CreateInvoice(ctx context.Context, amount int, month int, custo
 	metaData := map[string]any{
 		"customerId": customerId,
 		"purchaseId": purchaseId,
+		"username":   ctx.Value("username"),
 	}
 
 	paymentRequest := NewPaymentRequest(

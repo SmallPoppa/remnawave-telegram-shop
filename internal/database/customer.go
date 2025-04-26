@@ -307,13 +307,14 @@ func (cr *CustomerRepository) UpdateBatch(ctx context.Context, customers []Custo
 }
 
 func (cr *CustomerRepository) DeleteByNotInTelegramIds(ctx context.Context, telegramIDs []int64) error {
+	var buildDelete sq.DeleteBuilder
 	if len(telegramIDs) == 0 {
-		return nil
+		buildDelete = sq.Delete("customer")
+	} else {
+		buildDelete = sq.Delete("customer").
+			PlaceholderFormat(sq.Dollar).
+			Where(sq.NotEq{"telegram_id": telegramIDs})
 	}
-
-	buildDelete := sq.Delete("customer").
-		PlaceholderFormat(sq.Dollar).
-		Where(sq.NotEq{"telegram_id": telegramIDs})
 
 	sqlStr, args, err := buildDelete.ToSql()
 	if err != nil {
@@ -326,6 +327,7 @@ func (cr *CustomerRepository) DeleteByNotInTelegramIds(ctx context.Context, tele
 	}
 
 	return nil
+
 }
 
 // GetPool возвращает пул соединений с базой данных

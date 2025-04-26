@@ -12,7 +12,6 @@ import (
 	"remnawave-tg-shop-bot/internal/remnawave"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/internal/yookasa"
-	"strconv"
 	"time"
 )
 
@@ -49,9 +48,7 @@ func NewPaymentService(
 	}
 }
 
-func (s PaymentService) ProcessPurchaseById(purchaseId int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Second)
-	defer cancel()
+func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int64) error {
 	purchase, err := s.purchaseRepository.FindById(ctx, purchaseId)
 	if err != nil {
 		return err
@@ -99,7 +96,8 @@ func (s PaymentService) ProcessPurchaseById(purchaseId int64) error {
 		return err
 	}
 
-	referee, err := s.referralRepository.FindByReferee(ctx, customer.TelegramID)
+	ctxReferee := context.Background()
+	referee, err := s.referralRepository.FindByReferee(ctxReferee, customer.TelegramID)
 	if referee == nil {
 		return nil
 	}
@@ -109,11 +107,11 @@ func (s PaymentService) ProcessPurchaseById(purchaseId int64) error {
 	if err != nil {
 		return err
 	}
-	refereeCustomer, err := s.customerRepository.FindByTelegramId(ctx, referee.ReferrerID)
+	refereeCustomer, err := s.customerRepository.FindByTelegramId(ctxReferee, referee.ReferrerID)
 	if err != nil {
 		return err
 	}
-	refereeUser, err := s.remnawaveClient.CreateOrUpdateUser(ctx, refereeCustomer.ID, refereeCustomer.TelegramID, config.TrafficLimit(), config.GetReferralDays())
+	refereeUser, err := s.remnawaveClient.CreateOrUpdateUser(ctxReferee, refereeCustomer.ID, refereeCustomer.TelegramID, config.TrafficLimit(), config.GetReferralDays())
 	if err != nil {
 		return err
 	}
@@ -121,16 +119,16 @@ func (s PaymentService) ProcessPurchaseById(purchaseId int64) error {
 		"subscription_link": refereeUser.SubscriptionURL,
 		"expire_at":         refereeUser.ExpireAt,
 	}
-	err = s.customerRepository.UpdateFields(ctx, refereeCustomer.ID, refereeUserFilesToUpdate)
+	err = s.customerRepository.UpdateFields(ctxReferee, refereeCustomer.ID, refereeUserFilesToUpdate)
 	if err != nil {
 		return err
 	}
-	err = s.referralRepository.MarkBonusGranted(ctx, referee.ID)
+	err = s.referralRepository.MarkBonusGranted(ctxReferee, referee.ID)
 	if err != nil {
 		return err
 	}
 	slog.Info("Granted referral bonus", "customer_id", refereeCustomer.ID)
-	_, err = s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
+	_, err = s.telegramBot.SendMessage(ctxReferee, &bot.SendMessageParams{
 		ChatID: refereeCustomer.TelegramID,
 		Text:   s.translation.GetText(refereeCustomer.Language, "referral_bonus_granted"),
 		ReplyMarkup: models.InlineKeyboardMarkup{
@@ -194,7 +192,7 @@ func (s PaymentService) createCryptoInvoice(ctx context.Context, amount int, mon
 		Fiat:           "RUB",
 		Amount:         fmt.Sprintf("%d", amount),
 		AcceptedAssets: "USDT",
-		Payload:        fmt.Sprintf("purchaseId=%d", purchaseId),
+		Payload:        fmt.Sprintf("purchaseId=%d&username=%s", purchaseId, ctx.Value("username")),
 		Description:    fmt.Sprintf("Subscription on %d month", months),
 		PaidBtnName:    "callback",
 		PaidBtnUrl:     config.BotURL(),
@@ -278,7 +276,7 @@ func (s PaymentService) createTelegramInvoice(ctx context.Context, amount int, m
 			},
 		},
 		Description: s.translation.GetText(customer.Language, "invoice_description"),
-		Payload:     strconv.FormatInt(purchaseId, 10),
+		Payload:     fmt.Sprintf("%d&%s", purchaseId, ctx.Value("username")),
 	})
 
 	updates := map[string]interface{}{

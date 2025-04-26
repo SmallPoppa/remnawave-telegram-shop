@@ -299,8 +299,8 @@ func checkYookasaInvoice(
 		if err != nil {
 			slog.Error("Error parsing purchaseId", "invoiceId", invoice.ID, err)
 		}
-
-		err = paymentService.ProcessPurchaseById(int64(purchaseId))
+		ctxWithValue := context.WithValue(ctx, "username", invoice.Metadata["username"])
+		err = paymentService.ProcessPurchaseById(ctxWithValue, int64(purchaseId))
 		if err != nil {
 			slog.Error("Error processing invoice", "invoiceId", invoice.ID, "purchaseId", purchaseId, err)
 		} else {
@@ -350,8 +350,11 @@ func checkCryptoPayInvoice(
 
 	for _, invoice := range *invoices {
 		if invoice.InvoiceID != nil && invoice.IsPaid() {
-			purchaseID, err := strconv.Atoi(strings.Split(invoice.Payload, "=")[1])
-			err = paymentService.ProcessPurchaseById(int64(purchaseID))
+			payload := strings.Split(invoice.Payload, "&")
+			purchaseID, err := strconv.Atoi(strings.Split(payload[0], "=")[1])
+			username := strings.Split(payload[1], "=")[1]
+			ctxWithUsername := context.WithValue(ctx, "username", username)
+			err = paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseID))
 			if err != nil {
 				slog.Error("Error processing invoice", "invoiceId", invoice.InvoiceID, err)
 			} else {
