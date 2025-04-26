@@ -53,38 +53,43 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  send-notification:
-    needs: build-docker-image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+send-notification:
+  needs: build-docker-image
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
 
-      - name: Set commit message
-        id: commit-message
-        run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
-            # For tag events
-            TAG_MSG=$(git tag -l --format='%(contents)' ${{ github.ref_name }})
-            if [ -z "$TAG_MSG" ]; then
-              TAG_MSG="Release ${{ github.ref_name }}"
-            fi
-          else
-            # For workflow_dispatch or other events
-            TAG_MSG="${{ github.event.head_commit.message || format('Manual build from {0}', github.ref_name) }}"
+    - name: Set commit message
+      id: commit-message
+      run: |
+        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+          # For tag events
+          TAG_MSG=$(git tag -l --format='%(contents)' ${{ github.ref_name }})
+          if [ -z "$TAG_MSG" ]; then
+            TAG_MSG="Release ${{ github.ref_name }}"
           fi
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAG_MSG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          # For workflow_dispatch or other events
+          REF="${{ github.ref_name }}"
+          if [ -n "${{ github.event.head_commit.message }}" ]; then
+            TAG_MSG="${{ github.event.head_commit.message }}"
+          else
+            TAG_MSG="Manual build from ${REF}"
+          fi
+        fi
+        echo "message<<EOF" >> $GITHUB_OUTPUT
+        echo "$TAG_MSG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Send Telegram notification
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          message: |
-            ✅ Build finished.
-            🛠️ ${{ github.ref_name }}
-            📝 Message: ${{ steps.commit-message.outputs.message }}
-            🔗 Image: ghcr.io/${{ github.repository_owner }}/remnawave-telegram-shop-bot:${{ github.ref_name }}
+    - name: Send Telegram notification
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_TOKEN }}
+        message: |
+          ✅ Build finished.
+          🛠️ ${{ github.ref_name }}
+          📝 Message: ${{ steps.commit-message.outputs.message }}
+          🔗 Image: ghcr.io/${{ github.repository_owner }}/remnawave-telegram-shop-bot:${{ github.ref_name }}
