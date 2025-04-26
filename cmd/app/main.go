@@ -128,7 +128,9 @@ func main() {
 	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 		return update.Message != nil && update.Message.SuccessfulPayment != nil
 	}, h.SuccessPaymentHandler)
-
+	
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/pm", bot.MatchTypePrefix, h.PMCommandHandler, isAdminMiddleware)
+	
 	slog.Info("Bot is starting...")
 	b.Start(ctx)
 }

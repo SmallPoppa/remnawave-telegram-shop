@@ -327,3 +327,8 @@ func (cr *CustomerRepository) DeleteByNotInTelegramIds(ctx context.Context, tele
 
 	return nil
 }
+
+// GetPool возвращает пул соединений с базой данных
+func (cr *CustomerRepository) GetPool() *pgxpool.Pool {
+    return cr.pool
+}
