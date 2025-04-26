@@ -174,41 +174,20 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 
 func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	ctxWithTime, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	callback := update.CallbackQuery
 	langCode := callback.From.LanguageCode
 
-	defer cancel()
-	existingCustomer, err := h.customerRepository.FindByTelegramId(ctx, callback.From.ID)
+	existingCustomer, err := h.customerRepository.FindByTelegramId(ctxWithTime, callback.From.ID)
 	if err != nil {
 		slog.Error("error finding customer by telegram id", err)
 		return
 	}
 
-	if existingCustomer == nil {
-		existingCustomer, err = h.customerRepository.Create(ctxWithTime, &database.Customer{
-			TelegramID: callback.From.ID,
-			Language:   langCode,
-		})
-		if err != nil {
-			slog.Error("error creating customer", err)
-			return
-		}
-		slog.Info("user created", "telegramId", callback.From.ID)
-	} else {
-		updates := map[string]interface{}{
-			"language": langCode,
-		}
-
-		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates)
-		if err != nil {
-			slog.Error("Error updating customer", err)
-			return
-		}
-	}
-
 	inlineKeyboard := h.buildStartKeyboard(existingCustomer, langCode)
 
-	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: callback.Message.Message.Chat.ID,
+	_, err = b.EditMessageText(ctxWithTime, &bot.EditMessageTextParams{ChatID: callback.Message.Message.Chat.ID,
 		MessageID: callback.Message.Message.ID,
 		ParseMode: models.ParseModeMarkdown,
 		ReplyMarkup: models.InlineKeyboardMarkup{
@@ -218,6 +197,49 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", err)
+	}
+}
+
+func (h Handler) CreateCustomerIfNotExistMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		var telegramId int64
+		var langCode string
+		if update.Message != nil {
+			telegramId = update.Message.From.ID
+			langCode = update.Message.From.LanguageCode
+		} else if update.CallbackQuery != nil {
+			telegramId = update.CallbackQuery.From.ID
+			langCode = update.CallbackQuery.From.LanguageCode
+		}
+		existingCustomer, err := h.customerRepository.FindByTelegramId(ctx, telegramId)
+		if err != nil {
+			slog.Error("error finding customer by telegram id", err)
+			return
+		}
+
+		if existingCustomer == nil {
+			existingCustomer, err = h.customerRepository.Create(ctx, &database.Customer{
+				TelegramID: telegramId,
+				Language:   langCode,
+			})
+			if err != nil {
+				slog.Error("error creating customer", err)
+				return
+			}
+			slog.Info("user created", "telegramId", telegramId)
+		} else {
+			updates := map[string]interface{}{
+				"language": langCode,
+			}
+
+			err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates)
+			if err != nil {
+				slog.Error("Error updating customer", err)
+				return
+			}
+		}
+
+		next(ctx, b, update)
 	}
 }
 
