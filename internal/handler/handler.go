@@ -67,6 +67,7 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 		ChatID:    callbackMessage.Chat.ID,
 		MessageID: callbackMessage.ID,
 		Text:      text,
+		ParseMode: models.ParseModeMarkdown,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{Text: h.translation.GetText(langCode, "share_referral_button"), URL: refLink},
@@ -568,8 +569,9 @@ func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *
 
 	isDisabled := true
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   buildConnectText(customer, langCode),
+		ChatID:    update.Message.Chat.ID,
+		Text:      buildConnectText(customer, langCode),
+		ParseMode: models.ParseModeMarkdown,
 		LinkPreviewOptions: &models.LinkPreviewOptions{
 			IsDisabled: &isDisabled,
 		},
@@ -604,7 +606,8 @@ func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
-		Text:      buildConnectText(customer, langCode),
+		ParseMode: models.ParseModeMarkdown,
+		Text:      bot.EscapeMarkdown(buildConnectText(customer, langCode)),
 		LinkPreviewOptions: &models.LinkPreviewOptions{
 			IsDisabled: &isDisabled,
 		},

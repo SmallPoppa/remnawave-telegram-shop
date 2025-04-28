@@ -129,8 +129,9 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 	}
 	slog.Info("Granted referral bonus", "customer_id", refereeCustomer.ID)
 	_, err = s.telegramBot.SendMessage(ctxReferee, &bot.SendMessageParams{
-		ChatID: refereeCustomer.TelegramID,
-		Text:   s.translation.GetText(refereeCustomer.Language, "referral_bonus_granted"),
+		ChatID:    refereeCustomer.TelegramID,
+		ParseMode: models.ParseModeMarkdown,
+		Text:      s.translation.GetText(refereeCustomer.Language, "referral_bonus_granted"),
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: s.createConnectKeyboard(refereeCustomer),
 		},
