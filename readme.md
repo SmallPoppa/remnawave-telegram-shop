@@ -20,7 +20,7 @@ purchase and manage subscriptions through Telegram with multiple payment system 
 - Multi-language support (Russian and English)
 - **Selective Inbound Assignment**: Configure specific inbounds to assign to users via UUID filtering
 - **Country Filtering**: Configure which countries are displayed to users in the bot interface
-
+- All telegram message support HTML formatting https://core.telegram.org/bots/api#html-style
 ## Environment Variables
 
 The application requires the following environment variables to be set:

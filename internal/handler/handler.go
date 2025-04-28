@@ -67,7 +67,7 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 		ChatID:    callbackMessage.Chat.ID,
 		MessageID: callbackMessage.ID,
 		Text:      text,
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{Text: h.translation.GetText(langCode, "share_referral_button"), URL: refLink},
@@ -162,11 +162,11 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    update.Message.Chat.ID,
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
-		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), bot.EscapeMarkdown(utils.BuildAvailableCountriesLists(langCode))),
+		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), utils.BuildAvailableCountriesLists(langCode)),
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", err)
@@ -190,11 +190,11 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 
 	_, err = b.EditMessageText(ctxWithTime, &bot.EditMessageTextParams{ChatID: callback.Message.Message.Chat.ID,
 		MessageID: callback.Message.Message.ID,
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
-		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), bot.EscapeMarkdown(utils.BuildAvailableCountriesLists(langCode))),
+		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), utils.BuildAvailableCountriesLists(langCode)),
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", err)
@@ -337,7 +337,7 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
 		Text:      h.translation.GetText(langCode, "trial_text"),
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{{Text: h.translation.GetText(langCode, "activate_trial_button"), CallbackData: CallbackActivateTrial}},
@@ -374,7 +374,7 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 		ChatID:      callback.Chat.ID,
 		MessageID:   callback.ID,
 		Text:        h.translation.GetText(langCode, "trial_activated"),
-		ParseMode:   models.ParseModeMarkdown,
+		ParseMode:   models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: h.createConnectKeyboard(langCode)},
 	})
 	if err != nil {
@@ -442,7 +442,7 @@ func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *mod
 	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: keyboard,
 		},
@@ -571,7 +571,7 @@ func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    update.Message.Chat.ID,
 		Text:      buildConnectText(customer, langCode),
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		LinkPreviewOptions: &models.LinkPreviewOptions{
 			IsDisabled: &isDisabled,
 		},
@@ -606,8 +606,8 @@ func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
-		ParseMode: models.ParseModeMarkdown,
-		Text:      bot.EscapeMarkdown(buildConnectText(customer, langCode)),
+		ParseMode: models.ParseModeHTML,
+		Text:      buildConnectText(customer, langCode),
 		LinkPreviewOptions: &models.LinkPreviewOptions{
 			IsDisabled: &isDisabled,
 		},

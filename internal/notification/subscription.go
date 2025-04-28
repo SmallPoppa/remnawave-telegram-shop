@@ -83,7 +83,7 @@ func (s *SubscriptionService) sendNotification(ctx context.Context, customer dat
 	_, err := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    customer.TelegramID,
 		Text:      messageText,
-		ParseMode: models.ParseModeMarkdown,
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{

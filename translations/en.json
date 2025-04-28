@@ -1,5 +1,5 @@
 {
-  "greeting": "👋🏻 *Hello*\nThis is a bot for connecting to *VPN*🛡️\n\nAvailable locations:\n%s\n\n*How to connect:*\n• press the *\"Connect\"* button\n• follow the short instruction",
+  "greeting": "👋🏻 <b>Hello</b>\nThis is a bot for connecting to <b>VPN</b>🛡️\n\nAvailable locations:\n%s\n\n<b>How to connect:</b>\n• click the <b>Connect</b> button\n• follow the short instructions",
   "buy_button": "💰 Buy",
   "connect_button": "🔌 Connect",
   "back_button": "🔙 Back",
