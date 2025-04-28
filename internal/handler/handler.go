@@ -318,9 +318,21 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 	if config.TrialDays() == 0 {
 		return
 	}
+	c, err := h.customerRepository.FindByTelegramId(ctx, update.CallbackQuery.Message.Message.From.ID)
+	if err != nil {
+		slog.Error("Error finding customer", err)
+		return
+	}
+	if c == nil {
+		slog.Error("customer not exist", "chatID", update.CallbackQuery.Message.Message.From.ID, "error", err)
+		return
+	}
+	if c.SubscriptionLink != nil {
+		return
+	}
 	callback := update.CallbackQuery.Message.Message
 	langCode := update.CallbackQuery.From.LanguageCode
-	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
 		Text:      h.translation.GetText(langCode, "trial_text"),
@@ -341,9 +353,21 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 	if config.TrialDays() == 0 {
 		return
 	}
+	c, err := h.customerRepository.FindByTelegramId(ctx, update.CallbackQuery.Message.Message.From.ID)
+	if err != nil {
+		slog.Error("Error finding customer", err)
+		return
+	}
+	if c == nil {
+		slog.Error("customer not exist", "chatID", update.CallbackQuery.Message.Message.From.ID, "error", err)
+		return
+	}
+	if c.SubscriptionLink != nil {
+		return
+	}
 	callback := update.CallbackQuery.Message.Message
 	ctxWithUsername := context.WithValue(ctx, "username", update.CallbackQuery.From.Username)
-	_, err := h.paymentService.ActivateTrial(ctxWithUsername, update.CallbackQuery.From.ID)
+	_, err = h.paymentService.ActivateTrial(ctxWithUsername, update.CallbackQuery.From.ID)
 	langCode := update.CallbackQuery.From.LanguageCode
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      callback.Chat.ID,

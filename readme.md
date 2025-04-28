@@ -7,7 +7,8 @@ purchase and manage subscriptions through Telegram with multiple payment system 
 
 ## Admin commands
 
-- `/sync` - Poll users from remnawave and synchronize them with the database. Remove all users which not present in remnawave.
+- `/sync` - Poll users from remnawave and synchronize them with the database. Remove all users which not present in
+  remnawave.
 
 ## Features
 
@@ -116,8 +117,18 @@ The bot supports filtering which countries are displayed to users:
 ## Setup Instructions
 
 1. Clone the repository
+
+```bash
+git clone https://github.com/Jolymmiles/remnawave-telegram-shop && cd remnawave-telegram-shop
+```
+
 2. Create a `.env` file in the root directory with all the environment variables listed above
-3. Run the application:
+
+```bash
+mv .env.sample .env
+```
+
+3. Run the bot:
 
    ```bash
    docker compose up -d

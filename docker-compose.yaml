@@ -7,10 +7,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-#    volumes:
-#      - ./translations:/translations
     networks:
       - remnawave-network
+
+    volumes:
+      - ./translations:/translations
+
   db:
     image: postgres:17
     container_name: 'remnawave-telegram-shop-db'
