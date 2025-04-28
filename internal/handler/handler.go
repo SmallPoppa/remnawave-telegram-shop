@@ -318,7 +318,7 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 	if config.TrialDays() == 0 {
 		return
 	}
-	c, err := h.customerRepository.FindByTelegramId(ctx, update.CallbackQuery.Message.Message.From.ID)
+	c, err := h.customerRepository.FindByTelegramId(ctx, update.CallbackQuery.From.ID)
 	if err != nil {
 		slog.Error("Error finding customer", err)
 		return
@@ -353,7 +353,7 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 	if config.TrialDays() == 0 {
 		return
 	}
-	c, err := h.customerRepository.FindByTelegramId(ctx, update.CallbackQuery.Message.Message.From.ID)
+	c, err := h.customerRepository.FindByTelegramId(ctx, update.CallbackQuery.From.ID)
 	if err != nil {
 		slog.Error("Error finding customer", err)
 		return
