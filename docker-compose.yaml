@@ -9,7 +9,6 @@ services:
         condition: service_healthy
     networks:
       - remnawave-network
-
     volumes:
       - ./translations:/translations
 
