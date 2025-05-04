@@ -6,6 +6,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"log/slog"
+	"remnawave-tg-shop-bot/internal/broadcast"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 	"strings"
@@ -39,14 +40,14 @@ func (h Handler) PMCommandHandler(ctx context.Context, b *bot.Bot, update *model
 	}
 
 	// Создаем запись о рассылке в базе данных
-	broadcast := &database.Broadcast{
+	broadcast := &broadcast.Broadcast{
 		SenderID: update.Message.From.ID,
 		Message:  messageText,
-		Status:   database.BroadcastStatusPending,
+		Status:   broadcast.BroadcastStatusPending,
 	}
 
 	// Сохраняем запись в базу
-	broadcastRepo := database.NewBroadcastRepository(h.customerRepository.GetPool())
+	broadcastRepo := broadcast.NewBroadcastRepository(h.customerRepository.GetPool())
 	broadcastId, err := broadcastRepo.Create(ctx, broadcast)
 	
 	if err != nil {
@@ -84,7 +85,7 @@ func (h Handler) PMCommandHandler(ctx context.Context, b *bot.Bot, update *model
 
 // processBroadcast асинхронно отправляет сообщение всем подписчикам
 func (h *Handler) processBroadcast(ctx context.Context, b *bot.Bot, broadcastId int64, message string, subscribers []int64, adminId int64) {
-	broadcastRepo := database.NewBroadcastRepository(h.customerRepository.GetPool())
+	broadcastRepo := broadcast.NewBroadcastRepository(h.customerRepository.GetPool())
 	
 	totalCount := len(subscribers)
 	successCount := 0
@@ -114,9 +115,9 @@ func (h *Handler) processBroadcast(ctx context.Context, b *bot.Bot, broadcastId 
 	}
 
 	// Обновляем статус рассылки
-	status := database.BroadcastStatusSent
+	status := broadcast.BroadcastStatusSent
 	if failCount > 0 && failCount == totalCount {
-		status = database.BroadcastStatusFailed
+		status = broadcast.BroadcastStatusFailed
 	}
 	
 	err := broadcastRepo.UpdateStatus(ctx, broadcastId, status)
