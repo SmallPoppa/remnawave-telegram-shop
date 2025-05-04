@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"remnawave-tg-shop-bot/internal/broadcast"
 	"remnawave-tg-shop-bot/internal/config"
-	"remnawave-tg-shop-bot/internal/database"
 	"strings"
 	"time"
 )
@@ -40,7 +39,7 @@ func (h Handler) PMCommandHandler(ctx context.Context, b *bot.Bot, update *model
 	}
 
 	// Создаем запись о рассылке в базе данных
-	broadcast := &broadcast.Broadcast{
+	broadcastMsg := &broadcast.Broadcast{
 		SenderID: update.Message.From.ID,
 		Message:  messageText,
 		Status:   broadcast.BroadcastStatusPending,
@@ -48,7 +47,7 @@ func (h Handler) PMCommandHandler(ctx context.Context, b *bot.Bot, update *model
 
 	// Сохраняем запись в базу
 	broadcastRepo := broadcast.NewBroadcastRepository(h.customerRepository.GetPool())
-	broadcastId, err := broadcastRepo.Create(ctx, broadcast)
+	broadcastId, err := broadcastRepo.Create(ctx, broadcastMsg)
 	
 	if err != nil {
 		slog.Error("Error creating broadcast record", err)
