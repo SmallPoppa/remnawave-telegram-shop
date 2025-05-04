@@ -76,7 +76,7 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 	}
 
 	customerFilesToUpdate := map[string]interface{}{
-		"subscription_link": user.SubscriptionURL,
+		"subscription_link": user.SubscriptionUrl,
 		"expire_at":         user.ExpireAt,
 	}
 
@@ -116,8 +116,8 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 	refereeUserFilesToUpdate := map[string]interface{}{
-		"subscription_link": refereeUser.SubscriptionURL,
-		"expire_at":         refereeUser.ExpireAt,
+		"subscription_link": refereeUser.GetSubscriptionUrl(),
+		"expire_at":         refereeUser.GetExpireAt(),
 	}
 	err = s.customerRepository.UpdateFields(ctxReferee, refereeCustomer.ID, refereeUserFilesToUpdate)
 	if err != nil {
@@ -312,8 +312,8 @@ func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (st
 	}
 
 	customerFilesToUpdate := map[string]interface{}{
-		"subscription_link": user.SubscriptionURL,
-		"expire_at":         user.ExpireAt,
+		"subscription_link": user.GetSubscriptionUrl(),
+		"expire_at":         user.GetExpireAt(),
 	}
 
 	err = s.customerRepository.UpdateFields(ctx, customer.ID, customerFilesToUpdate)
@@ -321,7 +321,7 @@ func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (st
 		return "", err
 	}
 
-	return user.SubscriptionURL, nil
+	return user.GetSubscriptionUrl(), nil
 
 }
 

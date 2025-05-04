@@ -21,49 +21,38 @@ func NewSyncService(client *remnawave.Client, customerRepository *database.Custo
 
 func (s SyncService) Sync() {
 	ctx := context.Background()
-	pageSize := 250
-	start := 0
-
 	var telegramIDs []int64
 	telegramIDsSet := make(map[int64]int64)
 	var mappedUsers []database.Customer
-
-	for {
-		usersResponse, err := s.client.GetUsers(ctx, pageSize, start)
-		if err != nil {
-			slog.Error("Error while getting users from remnawave")
-			return
-		}
-		if usersResponse == nil || len(usersResponse.Users) == 0 {
-			break
-		}
-
-		for _, user := range usersResponse.Users {
-			if user.TelegramId == nil {
-				continue
-			}
-			if _, exists := telegramIDsSet[*user.TelegramId]; exists {
-				continue
-			}
-
-			customer, err := mapUserToCustomer(user)
-			if err != nil {
-				slog.Error("Error while mapping user from remnawave")
-				continue
-			}
-
-			telegramIDsSet[*user.TelegramId] = *user.TelegramId
-
-			telegramIDs = append(telegramIDs, customer.TelegramID)
-
-			mappedUsers = append(mappedUsers, customer)
-		}
-
-		start += len(usersResponse.Users)
-		if start >= usersResponse.Total {
-			break
-		}
+	users, err := s.client.GetUsers(ctx)
+	if err != nil {
+		slog.Error("Error while getting users from remnawave")
+		return
 	}
+	if users == nil || len(*users) == 0 {
+		slog.Error("No users found in remnawave")
+		return
+	}
+
+	for _, user := range *users {
+		if user.TelegramId.Null {
+			continue
+		}
+		if _, exists := telegramIDsSet[int64(user.TelegramId.Value)]; exists {
+			continue
+		}
+
+		telegramIDsSet[int64(user.TelegramId.Value)] = int64(user.TelegramId.Value)
+
+		telegramIDs = append(telegramIDs, int64(user.TelegramId.Value))
+
+		mappedUsers = append(mappedUsers, database.Customer{
+			TelegramID:       int64(user.TelegramId.Value),
+			ExpireAt:         &user.ExpireAt,
+			SubscriptionLink: &user.SubscriptionUrl,
+		})
+	}
+
 	existingCustomers, err := s.customerRepository.FindByTelegramIds(ctx, telegramIDs)
 	if err != nil {
 		slog.Error("Error while searching users by telegram ids")
@@ -108,12 +97,4 @@ func (s SyncService) Sync() {
 		}
 	}
 	slog.Info("Synchronization completed")
-}
-
-func mapUserToCustomer(user remnawave.User) (database.Customer, error) {
-	return database.Customer{
-		TelegramID:       *user.TelegramId,
-		ExpireAt:         &user.ExpireAt,
-		SubscriptionLink: &user.SubscriptionURL,
-	}, nil
 }

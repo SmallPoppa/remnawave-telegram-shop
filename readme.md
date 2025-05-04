@@ -1,9 +1,13 @@
 # Remnawave Telegram Shop
-
+[![Stars](https://img.shields.io/github/stars/Jolymmiles/remnawave-telegram-shop.svg?style=social)](https://github.com/Jolymmiles/remnawave-telegram-shop/stargazers)
+[![Forks](https://img.shields.io/github/forks/Jolymmiles/remnawave-telegram-shop.svg?style=social)](https://github.com/Jolymmiles/remnawave-telegram-shop/network/members)
+[![Issues](https://img.shields.io/github/issues/Jolymmiles/remnawave-telegram-shop.svg)](https://github.com/Jolymmiles/remnawave-telegram-shop/issues)
 ## Description
 
 A Telegram bot for selling subscriptions with integration to Remnawave (https://remna.st/). This service allows users to
 purchase and manage subscriptions through Telegram with multiple payment system options.
+
+- [remnawave-api-go](https://github.com/Jolymmiles/remnawave-api-go)
 
 ## Admin commands
 
@@ -130,23 +134,26 @@ mv .env.sample .env
 
 3. Run the bot:
 
-   ```bash
-   docker compose up -d
-   ```
+```bash
+docker compose up -d
+```
+
+## How to change bot messages
+
+Go to folder translations inside bot folder and change needed language.
 
 ## Update Instructions
 
 1. Pull the latest Docker image:
 
-   ```bash
-   docker compose pull
-   ```
-
+```bash
+docker compose pull
+```
 
 2. Restart the containers:
-   ```bash
-   docker compose down && docker compose up -d
-   ```
+```bash
+docker compose down && docker compose up -d
+```
 
 ## Donations
 

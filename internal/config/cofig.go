@@ -25,8 +25,7 @@ type config struct {
 	yookasaShopId          string
 	yookasaSecretKey       string
 	yookasaEmail           string
-	countries              map[string]string
-	trafficLimit           int64
+	trafficLimit           int
 	feedbackURL            string
 	channelURL             string
 	serverStatusURL        string
@@ -37,45 +36,27 @@ type config struct {
 	isTelegramStarsEnabled bool
 	adminTelegramId        int64
 	trialDays              int
-	trialTrafficLimit      int64
-	inboundUUIDs           []string
-	allowedCountries       []string
+	trialTrafficLimit      int
+	inboundUUIDs           map[string]string
 	referralDays           int
 	miniApp                string
 }
 
 var conf config
 
-func AllowedCountries() []string {
-	return conf.allowedCountries
-}
-
 func GetReferralDays() int {
 	return conf.referralDays
-}
-
-func IsCountryAllowed(countryCode string) bool {
-	if len(conf.allowedCountries) == 0 {
-		return true
-	}
-
-	for _, code := range conf.allowedCountries {
-		if code == countryCode {
-			return true
-		}
-	}
-	return false
 }
 
 func GetMiniAppURL() string {
 	return conf.miniApp
 }
 
-func InboundUUIDs() []string {
+func InboundUUIDs() map[string]string {
 	return conf.inboundUUIDs
 }
 
-func TrialTrafficLimit() int64 {
+func TrialTrafficLimit() int {
 	return conf.trialTrafficLimit * bytesInGigabyte
 }
 
@@ -153,13 +134,7 @@ func YookasaShopId() string {
 func YookasaSecretKey() string {
 	return conf.yookasaSecretKey
 }
-func SetCountries(countries map[string]string) {
-	conf.countries = countries
-}
-func Countries() map[string]string {
-	return conf.countries
-}
-func TrafficLimit() int64 {
+func TrafficLimit() int {
 	return conf.trafficLimit * bytesInGigabyte
 }
 
@@ -202,7 +177,7 @@ func InitConfig() {
 		conf.miniApp = ""
 	}
 
-	conf.trialTrafficLimit, err = strconv.ParseInt(os.Getenv("TRIAL_TRAFFIC_LIMIT"), 10, 64)
+	conf.trialTrafficLimit, err = strconv.Atoi(os.Getenv("TRIAL_TRAFFIC_LIMIT"))
 	if err != nil {
 		panic("TRIAL_TRAFFIC_LIMIT .env variable not set")
 	}
@@ -312,7 +287,7 @@ func InitConfig() {
 	if err != nil {
 		panic(err)
 	}
-	conf.trafficLimit = int64(limit)
+	conf.trafficLimit = limit
 
 	conf.referralDays, err = strconv.Atoi(os.Getenv("REFERRAL_DAYS"))
 	if err != nil {
@@ -325,33 +300,17 @@ func InitConfig() {
 	conf.channelURL = os.Getenv("CHANNEL_URL")
 	conf.tosURL = os.Getenv("TOS_URL")
 
-	// Изменена обработка переменной INBOUND_UUIDS вместо INBOUND_TAGS
 	inboundUUIDsStr := os.Getenv("INBOUND_UUIDS")
 	if inboundUUIDsStr != "" {
-		// Разбиваем строку с UUID по запятой и удаляем лишние пробелы
 		uuids := strings.Split(inboundUUIDsStr, ",")
-		for i := range uuids {
-			uuids[i] = strings.TrimSpace(uuids[i])
+		var inboundsMap = make(map[string]string)
+		for _, value := range uuids {
+			inboundsMap[value] = value
 		}
-		conf.inboundUUIDs = uuids
+		conf.inboundUUIDs = inboundsMap
 		slog.Info("Loaded inbound UUIDs", "uuids", conf.inboundUUIDs)
 	} else {
-		conf.inboundUUIDs = []string{} // Пустой массив, если UUID не указаны
+		conf.inboundUUIDs = map[string]string{}
 		slog.Info("No inbound UUIDs specified, all will be used")
-	}
-
-	// Добавлена обработка переменной ALLOWED_COUNTRIES
-	allowedCountriesStr := os.Getenv("ALLOWED_COUNTRIES")
-	if allowedCountriesStr != "" {
-		// Разбиваем строку с кодами стран по запятой и удаляем лишние пробелы
-		countries := strings.Split(allowedCountriesStr, ",")
-		for i := range countries {
-			countries[i] = strings.TrimSpace(countries[i])
-		}
-		conf.allowedCountries = countries
-		slog.Info("Loaded allowed countries", "countries", conf.allowedCountries)
-	} else {
-		conf.allowedCountries = []string{} // Пустой массив, если страны не указаны
-		slog.Info("No country restrictions, all countries will be shown")
 	}
 }

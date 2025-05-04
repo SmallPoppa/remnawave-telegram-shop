@@ -1,26 +1,20 @@
 package remnawave
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	remapi "github.com/Jolymmiles/remnawave-api-go/api"
 	"github.com/google/uuid"
-	"io"
-	"log/slog"
-	"net"
 	"net/http"
 	"remnawave-tg-shop-bot/internal/config"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Client struct {
-	baseURL    string
-	token      string
-	mode       string
-	httpClient *http.Client
+	client *remapi.Client
 }
 
 type headerTransport struct {
@@ -33,487 +27,148 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(req)
 }
 
-func NewClient(baseURL string, token string, mode string) *Client {
+func NewClient(baseURL, token, mode string) *Client {
 	client := &http.Client{}
-
 	if mode == "local" {
 		client.Transport = &headerTransport{
 			base: http.DefaultTransport,
 		}
 	}
-
-	return &Client{
-		token:      token,
-		baseURL:    baseURL,
-		mode:       mode,
-		httpClient: client,
+	remnawaveApi, err := remapi.NewClient(baseURL, remapi.StaticToken{Token: token}, remapi.WithClient(client))
+	if err != nil {
+		panic(err)
 	}
+	return &Client{client: remnawaveApi}
 }
 
-func (r *Client) GetUsers(ctx context.Context, pageSize int, start int) (*UsersResponse, error) {
-	url := fmt.Sprintf("%s/api/users/v2?size=%d&start=%d", r.baseURL, pageSize, start)
+func (r *Client) GetUsers(ctx context.Context) (*[]remapi.UserDto, error) {
+	pageSize := float64(250)
+	start := float64(0)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	users := make([]remapi.UserDto, 0)
+	for {
+		resp, err := r.client.UsersControllerGetAllUsersV2(ctx,
+			remapi.UsersControllerGetAllUsersV2Params{Size: remapi.NewOptFloat64(pageSize), Start: remapi.NewOptFloat64(start)})
+
+		if err != nil {
+			return nil, err
+		}
+		response := resp.GetResponse()
+
+		usersResponse := &response.Users
+
+		users = append(users, *usersResponse...)
+
+		start += float64(len(*usersResponse))
+
+		if start >= response.GetTotal() {
+			break
+		}
 	}
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.token)
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var wrapper ResponseWrapper[UsersResponse]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &wrapper.Response, nil
-
+	return &users, nil
 }
 
-func (r *Client) CreateOrUpdateUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int64, days int) (*User, error) {
-	existingUser, err := r.GetUserByTelegramId(ctx, telegramId)
-
+func (r *Client) CreateOrUpdateUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int, days int) (*remapi.UserDto, error) {
+	resp, err := r.client.UsersControllerGetUserByTelegramId(ctx, remapi.UsersControllerGetUserByTelegramIdParams{TelegramId: strconv.FormatInt(telegramId, 10)})
 	if err != nil {
 		return nil, err
 	}
 
-	if existingUser == nil {
-		newUser, err := r.createUser(ctx, customerId, telegramId, trafficLimit, days)
-		if err != nil {
-			return nil, err
+	switch v := resp.(type) {
+
+	case *remapi.UsersControllerGetUserByTelegramIdNotFound:
+		return r.createUser(ctx, customerId, telegramId, trafficLimit, days)
+	case *remapi.GetUserByTelegramIdResponseDto:
+		var existingUser *remapi.UserDto
+		for _, panelUser := range v.GetResponse() {
+			if strings.Contains(panelUser.Username, fmt.Sprintf("_%d", telegramId)) {
+				existingUser = &panelUser
+			}
 		}
-		return newUser, nil
-	} else {
-		if existingUser.TelegramId == nil {
-			existingUser.TelegramId = &telegramId
+		if existingUser == nil {
+			existingUser = &v.GetResponse()[0]
 		}
-		updatedUser, err := r.updateUser(ctx, existingUser, trafficLimit, days)
-		if err != nil {
-			return nil, err
-		}
-		return updatedUser, nil
+		return r.updateUser(ctx, existingUser, trafficLimit, days)
+	default:
+		return nil, errors.New("unknown response type")
 	}
 }
 
-func (r *Client) updateUser(ctx context.Context, existingUser *User, trafficLimit int64, days int) (*User, error) {
-	newExpire := getNewExpire(days, existingUser)
+func (r *Client) updateUser(ctx context.Context, existingUser *remapi.UserDto, trafficLimit int, days int) (*remapi.UserDto, error) {
 
-	userUpdate := &UserUpdate{
+	newExpire := getNewExpire(days, existingUser.ExpireAt)
+
+	userUpdate := &remapi.UpdateUserRequestDto{
 		UUID:              existingUser.UUID,
-		ExpireAt:          newExpire,
-		TelegramId:        *existingUser.TelegramId,
-		Status:            ACTIVE,
-		TrafficLimitBytes: trafficLimit,
+		ExpireAt:          remapi.NewOptDateTime(newExpire),
+		Status:            remapi.NewOptUpdateUserRequestDtoStatus(remapi.UpdateUserRequestDtoStatusACTIVE),
+		TrafficLimitBytes: remapi.NewOptInt(trafficLimit),
 	}
 
 	if ctx.Value("username") != nil {
-		userUpdate.Description = ctx.Value("username").(string)
+		userUpdate.Description = remapi.NewOptNilString(ctx.Value("username").(string))
 	}
 
-	jsonData, err := json.Marshal(userUpdate)
+	updateUser, err := r.client.UsersControllerUpdateUser(ctx, userUpdate)
 	if err != nil {
-		slog.Error("Error while converting to JSON", "error", err)
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/api/users/update", r.baseURL)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		slog.Error("Error while creating update request", "error", err)
-		return nil, err
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+r.token)
-
-	resp, err := r.httpClient.Do(httpReq)
-	if err != nil {
-		slog.Error("Error while making update request", "error", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			slog.Error("Failed to read error response body", "error", err)
-		} else {
-			bodyString := string(bodyBytes)
-			slog.Error("Request failed",
-				"status_code", resp.StatusCode,
-				"response_body", bodyString)
-		}
-		return nil, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
-	}
-
-	var wrapper ResponseWrapper[User]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &wrapper.Response, nil
+	return &updateUser.Response, nil
 }
 
-func (r *Client) createUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int64, days int) (*User, error) {
+func (r *Client) createUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int, days int) (*remapi.UserDto, error) {
 	expireAt := time.Now().UTC().AddDate(0, 0, days)
 	username := generateUsername(customerId, telegramId)
 
-	inbounds := *r.getInbounds(ctx)
-	inboundsId := make([]uuid.UUID, len(inbounds))
-	for i, inbound := range inbounds {
-		inboundsId[i] = inbound.UUID
+	resp, err := r.client.InboundsControllerGetInbounds(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	userCreate := &UserCreate{
+	inbounds := resp.GetResponse()
+	inboundsId := make([]uuid.UUID, len(inbounds))
+	for i, inbound := range inbounds {
+		if config.InboundUUIDs() != nil && len(config.InboundUUIDs()) > 0 {
+			if _, isExist := config.InboundUUIDs()[inbound.UUID.String()]; !isExist {
+				continue
+			}
+			inboundsId[i] = inbound.UUID
+		} else {
+			inboundsId[i] = inbound.UUID
+		}
+
+	}
+
+	createUserRequestDto := remapi.CreateUserRequestDto{
 		Username:             username,
 		ActiveUserInbounds:   inboundsId,
-		Status:               ACTIVE,
-		TrafficLimitStrategy: MONTH,
-		SubscriptionUuid:     nil,
-		TelegramId:           telegramId,
+		Status:               remapi.NewOptCreateUserRequestDtoStatus(remapi.CreateUserRequestDtoStatusACTIVE),
+		TelegramId:           remapi.NewOptInt(int(telegramId)),
 		ExpireAt:             expireAt,
-		TrafficLimitBytes:    trafficLimit,
+		TrafficLimitStrategy: remapi.CreateUserRequestDtoTrafficLimitStrategyMONTH,
+		TrafficLimitBytes:    remapi.NewOptInt(trafficLimit),
 	}
 
 	if ctx.Value("username") != nil {
-		userCreate.Description = ctx.Value("username").(string)
+		createUserRequestDto.Description = remapi.NewOptString(ctx.Value("username").(string))
 	}
 
-	jsonData, err := json.Marshal(userCreate)
+	userCreate, err := r.client.UsersControllerCreateUser(ctx, &createUserRequestDto)
 	if err != nil {
-		slog.Error("Error while converting to JSON: %v", err)
 		return nil, err
 	}
-
-	httpReq, err := http.NewRequest(http.MethodPost, r.baseURL+"/api/users", bytes.NewBuffer(jsonData))
-	if err != nil {
-		slog.Error("Error while creating create request: %v", err)
-		return nil, err
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+r.token)
-
-	resp, err := r.httpClient.Do(httpReq)
-	if err != nil {
-		slog.Error("Error while making create request: %v", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			slog.Error("Failed to read error response body", err)
-		} else {
-			bodyString := string(bodyBytes)
-			slog.Error("Request failed",
-				"status_code", resp.StatusCode,
-				"response_body", bodyString)
-		}
-		return nil, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
-	}
-
-	var wrapper ResponseWrapper[User]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &wrapper.Response, nil
+	return &userCreate.Response, nil
 }
 
 func generateUsername(customerId int64, telegramId int64) string {
 	return fmt.Sprintf("%d_%d", customerId, telegramId)
 }
 
-func (r *Client) GetUserByTelegramId(ctx context.Context, telegramId int64) (*User, error) {
-	url := fmt.Sprintf("%s/api/users/tg/%d", r.baseURL, telegramId)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+func getNewExpire(daysToAdd int, currentExpire time.Time) time.Time {
+	if currentExpire.IsZero() {
+		return time.Now().UTC().AddDate(0, 0, daysToAdd)
 	}
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.token)
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var wrapper ResponseWrapper[[]User]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	var user User
-	for _, user = range wrapper.Response {
-		if strings.Contains(user.Username, fmt.Sprintf("_%d", telegramId)) {
-			break
-		}
-
-	}
-
-	return &user, nil
-}
-
-func (r *Client) GetUserByUsername(ctx context.Context, username string) (*User, error) {
-	url := fmt.Sprintf("%s/api/users/username/%s", r.baseURL, username)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.token)
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var wrapper ResponseWrapper[User]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &wrapper.Response, nil
-}
-
-func getNewExpire(days int, existingUser *User) time.Time {
-	if existingUser.ExpireAt.IsZero() {
-		return time.Now().UTC().AddDate(0, 0, days)
-	}
-
-	return existingUser.ExpireAt.AddDate(0, 0, days)
-}
-
-func (r *Client) GetNodes(ctx context.Context) (*[]Node, error) {
-	url := fmt.Sprintf("%s/api/nodes/get-all", r.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		slog.Error("Failed to create request", "error", err.Error())
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.token)
-
-	slog.Debug("Sending request to get nodes", "url", url)
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		slog.Error("Failed to execute request", "error", err.Error())
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		bodyString := ""
-		if readErr == nil {
-			bodyString = string(bodyBytes)
-		}
-
-		slog.Error("Request failed",
-			"statusCode", resp.StatusCode,
-			"responseBody", bodyString)
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var wrapper ResponseWrapper[[]Node]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		slog.Error("Failed to decode response", "error", err.Error())
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &wrapper.Response, nil
-}
-
-func retryWithBackoff(ctx context.Context, maxAttempts int, initialDelay time.Duration,
-	fn func() error, isRetryable func(error) bool) error {
-	var err error
-
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if ctx.Err() != nil {
-			return fmt.Errorf("operation canceled: %w", ctx.Err())
-		}
-
-		err = fn()
-		if err == nil {
-			return nil
-		}
-
-		if !isRetryable(err) {
-			return fmt.Errorf("non-retryable error: %w", err)
-		}
-
-		if attempt < maxAttempts-1 {
-			delay := initialDelay * (1 << attempt)
-
-			slog.Info("Retrying operation",
-				"attempt", attempt+1,
-				"maxAttempts", maxAttempts,
-				"delay", delay,
-				"error", err.Error())
-
-			timer := time.NewTimer(delay)
-			select {
-			case <-timer.C:
-			case <-ctx.Done():
-				timer.Stop()
-				return fmt.Errorf("operation canceled during retry wait: %w", ctx.Err())
-			}
-		}
-	}
-
-	return fmt.Errorf("operation failed after %d attempts: %w", maxAttempts, err)
-}
-
-func isRetryableError(err error) bool {
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	if err.Error() == "unexpected status code: 500" ||
-		err.Error() == "unexpected status code: 502" ||
-		err.Error() == "unexpected status code: 503" ||
-		err.Error() == "unexpected status code: 504" {
-		return true
-	}
-
-	return false
-}
-
-func (r *Client) GetNodesWithRetry(ctx context.Context, maxAttempts int, initialDelay time.Duration) (*[]Node, error) {
-	var nodes *[]Node
-
-	slog.Info("Fetching all nodes with retry",
-		"baseURL", r.baseURL,
-		"maxAttempts", maxAttempts,
-		"initialDelay", initialDelay.String())
-
-	err := retryWithBackoff(
-		ctx,
-		maxAttempts,
-		initialDelay,
-		func() error {
-			var err error
-			nodes, err = r.GetNodes(ctx)
-			return err
-		},
-		isRetryableError,
-	)
-
-	if err != nil {
-		slog.Error("Failed to get nodes after retries", "error", err.Error())
-		return nil, err
-	}
-
-	return nodes, nil
-}
-
-func (r *Client) GetNodesWithDefaultRetry(ctx context.Context) (*[]Node, error) {
-	return r.GetNodesWithRetry(ctx, 3, 500*time.Millisecond)
-}
-
-func (r *Client) getInbounds(ctx context.Context) *[]Inbound {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, config.RemnawaveUrl()+"/api/inbounds", nil)
-	if err != nil {
-		slog.Error("Error while creating create request: %v", err)
-	}
-	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+r.token)
-
-	resp, err := r.httpClient.Do(httpReq)
-	if err != nil {
-		slog.Error("Error while making get inbounds request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		slog.Error("status code", resp.StatusCode)
-		return nil
-	}
-
-	var wrapper ResponseWrapper[[]Inbound]
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		slog.Error("Error while decode response: %v", err)
-		return nil
-	}
-
-	// Получаем список UUID для фильтрации
-	configUUIDs := config.InboundUUIDs()
-
-	// Если UUID не указаны в конфигурации, возвращаем все инбаунды
-	if len(configUUIDs) == 0 {
-		slog.Info("No inbound UUID filter set, using all inbounds")
-		return &wrapper.Response
-	}
-
-	// Создаем мапу UUID для быстрого поиска
-	uuidsMap := make(map[string]bool)
-	for _, uuid := range configUUIDs {
-		uuidsMap[uuid] = true
-	}
-
-	// Фильтруем инбаунды по UUID
-	filteredInbounds := []Inbound{}
-	for _, inbound := range wrapper.Response {
-		if uuidsMap[inbound.UUID.String()] {
-			filteredInbounds = append(filteredInbounds, inbound)
-		}
-	}
-
-	if len(filteredInbounds) == 0 {
-		slog.Warn("No inbounds match the configured UUIDs, falling back to all inbounds",
-			"configuredUUIDs", configUUIDs)
-		return &wrapper.Response
-	}
-
-	slog.Info("Filtered inbounds by UUIDs",
-		"totalInbounds", len(wrapper.Response),
-		"filteredInbounds", len(filteredInbounds),
-		"usedUUIDs", configUUIDs)
-
-	return &filteredInbounds
+	return currentExpire.AddDate(0, 0, daysToAdd)
 }

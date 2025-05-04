@@ -12,7 +12,6 @@ import (
 	"remnawave-tg-shop-bot/internal/payment"
 	"remnawave-tg-shop-bot/internal/sync"
 	"remnawave-tg-shop-bot/internal/translation"
-	"remnawave-tg-shop-bot/internal/utils"
 	"remnawave-tg-shop-bot/internal/yookasa"
 	"strconv"
 	"strings"
@@ -166,7 +165,7 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
-		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), utils.BuildAvailableCountriesLists(langCode)),
+		Text: h.translation.GetText(langCode, "greeting"),
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", err)
@@ -194,7 +193,7 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
-		Text: fmt.Sprintf(h.translation.GetText(langCode, "greeting"), utils.BuildAvailableCountriesLists(langCode)),
+		Text: h.translation.GetText(langCode, "greeting"),
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", err)
