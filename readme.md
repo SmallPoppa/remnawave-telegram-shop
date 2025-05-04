@@ -13,6 +13,7 @@ purchase and manage subscriptions through Telegram with multiple payment system 
 
 - `/sync` - Poll users from remnawave and synchronize them with the database. Remove all users which not present in
   remnawave.
+  - `/pm text` - Send your text to all users via bot.
 
 ## Features
 
