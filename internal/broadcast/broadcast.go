@@ -1,4 +1,4 @@
-package database
+package broadcast
 
 import (
 	"context"
