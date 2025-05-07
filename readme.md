@@ -124,7 +124,7 @@ The bot supports filtering which countries are displayed to users:
 1. Clone the repository
 
 ```bash
-git clone https://github.com/Jolymmiles/remnawave-telegram-shop && cd remnawave-telegram-shop
+git clone https://github.com/SmallPoppa/remnawave-telegram-shop && cd remnawave-telegram-shop
 ```
 
 2. Create a `.env` file in the root directory with all the environment variables listed above
@@ -155,19 +155,3 @@ docker compose pull
 ```bash
 docker compose down && docker compose up -d
 ```
-
-## Donations
-
-If you appreciate this project and want to help keep it running (and fuel those caffeine-fueled coding marathons),
-consider donating. Your support helps drive future updates and improvements.
-
-**Donation Methods:**
-
-- **Bep20 USDT:** `0x4D1ee2445fdC88fA49B9d02FB8ee3633f45Bef48`
-
-- **SOL Solana:** `HNQhe6SCoU5UDZicFKMbYjQNv9Muh39WaEWbZayQ9Nn8`
-
-- **TRC20 USDT:** `TBJrguLia8tvydsQ2CotUDTYtCiLDA4nPW`
-
-- **TON USDT:** `UQAdAhVxOr9LS07DDQh0vNzX2575Eu0eOByjImY1yheatXgr`
-
